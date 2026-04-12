@@ -54,13 +54,24 @@ def _parse_arxiv_entry(entry) -> PaperInfo:
     doi = doi_elem.text.strip() if doi_elem is not None and doi_elem.text else ""
 
     url = ""
+    code_url = ""
     for link_elem in entry.findall("atom:link", ATOM_NS):
-        if link_elem.get("title") == "html":
-            url = link_elem.get("href", "")
-            break
+        link_title = link_elem.get("title", "")
+        link_href = link_elem.get("href", "")
+        if link_title == "html":
+            url = link_href
+        elif link_title == "related" and "github.com" in link_href.lower():
+            code_url = link_href
     if not url:
         id_elem = entry.find("atom:id", ATOM_NS)
         url = id_elem.text.strip() if id_elem is not None and id_elem.text else ""
+
+    # 尝试从摘要中提取GitHub链接
+    if not code_url and abstract:
+        import re
+        github_match = re.search(r'(https?://github\.com/[\w\-]+/[\w\-]+)', abstract)
+        if github_match:
+            code_url = github_match.group(1)
 
     published_elem = entry.find("atom:published", ATOM_NS)
     publish_date = published_elem.text.strip()[:10] if published_elem is not None and published_elem.text else ""
@@ -79,7 +90,8 @@ def _parse_arxiv_entry(entry) -> PaperInfo:
         url=url,
         source="arxiv",
         publish_date=publish_date,
-        categories=categories
+        categories=categories,
+        code_url=code_url
     )
 
 

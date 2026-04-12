@@ -69,6 +69,14 @@ def _parse_scholar_paper(paper_data: dict) -> PaperInfo:
     if publish_date is None:
         publish_date = ""
 
+    # 从摘要中提取GitHub代码链接
+    code_url = ""
+    if abstract:
+        import re
+        github_match = re.search(r'(https?://github\.com/[\w\-]+/[\w\-]+)', abstract)
+        if github_match:
+            code_url = github_match.group(1)
+
     return PaperInfo(
         title=title,
         abstract=abstract,
@@ -77,7 +85,8 @@ def _parse_scholar_paper(paper_data: dict) -> PaperInfo:
         url=url,
         source="semantic_scholar",
         publish_date=publish_date,
-        categories=[]
+        categories=[],
+        code_url=code_url
     )
 
 

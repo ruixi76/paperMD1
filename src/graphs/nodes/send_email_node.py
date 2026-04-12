@@ -56,13 +56,21 @@ def _send_html_email(subject: str, content: str, to_addrs: list) -> dict:
                 .header h1 {{ margin: 0; font-size: 24px; }}
                 .header p {{ margin: 8px 0 0; opacity: 0.9; font-size: 14px; }}
                 .content {{ padding: 30px 40px; }}
+                .content h2 {{ color: #2c3e50; border-bottom: 2px solid #eee; padding-bottom: 8px; margin-top: 30px; }}
                 .paper-card {{ background: #f8f9fa; border-left: 4px solid #667eea; padding: 20px; margin: 16px 0; border-radius: 0 8px 8px 0; }}
-                .paper-card h3 {{ margin: 0 0 8px; color: #2c3e50; }}
-                .score {{ display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px; margin-right: 8px; }}
+                .paper-card h3 {{ margin: 0 0 8px; color: #2c3e50; font-size: 16px; }}
+                .priority-high {{ background: #fdecea; color: #c62828; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: bold; margin-right: 8px; }}
+                .priority-recommended {{ background: #fff8e1; color: #e65100; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: bold; margin-right: 8px; }}
+                .priority-watch {{ background: #e8f5e9; color: #2e7d32; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: bold; margin-right: 8px; }}
+                .score {{ display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px; margin-right: 6px; }}
                 .score-innovation {{ background: #e3f2fd; color: #1565c0; }}
                 .score-relevance {{ background: #e8f5e9; color: #2e7d32; }}
                 .score-feasibility {{ background: #fff3e0; color: #e65100; }}
                 .doi-badge {{ background: #f3e5f5; color: #7b1fa2; padding: 2px 8px; border-radius: 4px; font-size: 12px; }}
+                .core-contribution {{ background: #e8eaf6; padding: 10px 14px; border-radius: 6px; margin: 8px 0; font-size: 14px; }}
+                .recommend-reason {{ background: #fff3e0; padding: 10px 14px; border-radius: 6px; margin: 8px 0; font-size: 14px; }}
+                .trend-section {{ background: linear-gradient(135deg, #e8eaf6 0%, #f3e5f5 100%); padding: 20px; border-radius: 8px; margin: 16px 0; }}
+                .action-section {{ background: linear-gradient(135deg, #e8f5e9 0%, #e0f7fa 100%); padding: 20px; border-radius: 8px; margin: 16px 0; }}
                 .footer {{ margin-top: 30px; padding: 20px 40px; border-top: 1px solid #eee; color: #999; font-size: 12px; background: #fafafa; }}
                 a {{ color: #667eea; text-decoration: none; }}
                 a:hover {{ text-decoration: underline; }}

@@ -73,7 +73,9 @@ def _build_papers_text(papers: List[PaperInfo], source_verify_results: Dict[int,
         text += f"DOI: {paper.doi or '无'}\n"
         verify_status = source_verify_results.get(i, "unverified")
         text += f"溯源状态: {VERIFY_LABELS.get(verify_status, '⚠️ 无法溯源')}\n"
-        text += f"链接: {paper.url}\n"
+        text += f"论文链接: {paper.url}\n"
+        if paper.code_url:
+            text += f"代码仓库: {paper.code_url}\n"
         text += f"来源: {paper.source} | 日期: {paper.publish_date}\n\n"
     return text
 

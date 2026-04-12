@@ -19,6 +19,7 @@ class PaperInfo(BaseModel):
     source: str = Field(default="", description="数据来源：arxiv/pubmed/semantic_scholar")
     publish_date: str = Field(default="", description="发布日期")
     categories: List[str] = Field(default_factory=list, description="学科分类")
+    code_url: str = Field(default="", description="代码仓库链接（如GitHub）")
 
 
 class UserProfile(BaseModel):

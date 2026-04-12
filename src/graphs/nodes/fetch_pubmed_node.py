@@ -103,6 +103,14 @@ def _parse_pubmed_article(article) -> PaperInfo:
     if pmid and not doi:
         url = f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/"
 
+    # 从摘要中提取GitHub代码链接
+    code_url = ""
+    if abstract:
+        import re
+        github_match = re.search(r'(https?://github\.com/[\w\-]+/[\w\-]+)', abstract)
+        if github_match:
+            code_url = github_match.group(1)
+
     return PaperInfo(
         title=title,
         abstract=abstract,
@@ -111,7 +119,8 @@ def _parse_pubmed_article(article) -> PaperInfo:
         url=url,
         source="pubmed",
         publish_date=publish_date,
-        categories=["medicine"]
+        categories=["medicine"],
+        code_url=code_url
     )
 
 
