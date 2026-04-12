@@ -113,7 +113,7 @@ def agent_analysis_node(
         response = client.invoke(
             messages=messages,
             model=llm_config.get("model", "doubao-seed-2-0-pro-260215"),
-            temperature=llm_config.get("temperature", 0.3),
+            temperature=llm_config.get("temperature", 0.6),
             max_completion_tokens=llm_config.get("max_completion_tokens", 8192),
             thinking=llm_config.get("thinking", "disabled")
         )
