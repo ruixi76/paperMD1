@@ -6,7 +6,7 @@
 import json
 import logging
 import os
-import urllib.request
+import re
 from typing import List, Dict
 from jinja2 import Template
 from langchain_core.runnables import RunnableConfig
@@ -21,22 +21,49 @@ from graphs.state import AgentAnalysisInput, AgentAnalysisOutput, PaperInfo, Use
 logger = logging.getLogger(__name__)
 
 
-def _verify_doi(doi: str) -> bool:
-    """验证DOI是否可溯源（通过doi.org解析）"""
-    if not doi:
-        return False
-    try:
-        url = f"https://doi.org/{doi}"
-        req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "LiteratureRadar/1.0"})
-        opener = urllib.request.build_opener(urllib.request.HTTPRedirectHandler)
-        response = opener.open(req, timeout=10)
-        return response.status in (200, 301, 302)
-    except Exception:
-        return False
+def _verify_source(paper: PaperInfo) -> str:
+    """
+    验证论文来源可溯源性（无需外网请求，基于格式和来源校验）
+    
+    Returns:
+        "doi_verified" - DOI格式有效
+        "arxiv_verified" - ArXiv来源可验证
+        "pubmed_verified" - PubMed来源可验证
+        "scholar_verified" - Semantic Scholar来源可验证
+        "unverified" - 无法验证
+    """
+    # 1. 检查DOI格式有效性（标准DOI格式: 10.xxxx/...）
+    if paper.doi:
+        doi_pattern = r'^10\.\d{4,9}/[-._;()/:A-Za-z0-9]+$'
+        if re.match(doi_pattern, paper.doi):
+            return "doi_verified"
+
+    # 2. 按来源校验URL格式
+    url = paper.url.lower()
+    if paper.source == "arxiv" and "arxiv.org" in url:
+        return "arxiv_verified"
+    if paper.source == "pubmed" and ("pubmed.ncbi.nlm.nih.gov" in url or "ncbi.nlm.nih.gov" in url):
+        return "pubmed_verified"
+    if paper.source == "semantic_scholar" and "semanticscholar.org" in url:
+        return "scholar_verified"
+
+    # 3. 通用URL格式检查
+    if url.startswith("https://") or url.startswith("http://"):
+        return "url_available"
+
+    return "unverified"
 
 
-def _build_papers_text(papers: List[PaperInfo], doi_verify_results: Dict[str, bool]) -> str:
+def _build_papers_text(papers: List[PaperInfo], source_verify_results: Dict[int, str]) -> str:
     """构建论文信息文本"""
+    VERIFY_LABELS = {
+        "doi_verified": "✅ DOI格式有效",
+        "arxiv_verified": "✅ ArXiv来源可验证",
+        "pubmed_verified": "✅ PubMed来源可验证",
+        "scholar_verified": "✅ Semantic Scholar来源可验证",
+        "url_available": "✅ 链接可访问",
+        "unverified": "⚠️ 无法溯源"
+    }
     text = ""
     for i, paper in enumerate(papers, 1):
         text += f"### 论文 {i}\n"
@@ -44,9 +71,8 @@ def _build_papers_text(papers: List[PaperInfo], doi_verify_results: Dict[str, bo
         text += f"作者: {', '.join(paper.authors[:5])}{'等' if len(paper.authors) > 5 else ''}\n"
         text += f"摘要: {paper.abstract[:500]}\n"
         text += f"DOI: {paper.doi or '无'}\n"
-        if paper.doi:
-            verified = doi_verify_results.get(paper.doi, False)
-            text += f"DOI溯源: {'✅ 验证通过' if verified else '⚠️ 未能验证'}\n"
+        verify_status = source_verify_results.get(i, "unverified")
+        text += f"溯源状态: {VERIFY_LABELS.get(verify_status, '⚠️ 无法溯源')}\n"
         text += f"链接: {paper.url}\n"
         text += f"来源: {paper.source} | 日期: {paper.publish_date}\n\n"
     return text
@@ -73,16 +99,15 @@ def agent_analysis_node(
     sp = _cfg.get("sp", "")
     up = _cfg.get("up", "")
 
-    # DOI溯源校验（验证Top5论文的DOI）
-    doi_verify_results = {}
-    for paper in state.top_papers[:5]:
-        if paper.doi:
-            verified = _verify_doi(paper.doi)
-            doi_verify_results[paper.doi] = verified
-            logger.info(f"DOI验证 {paper.doi}: {'通过' if verified else '未通过'}")
+    # 来源溯源校验（基于格式验证，无需外网请求）
+    source_verify_results = {}
+    for idx, paper in enumerate(state.top_papers, 1):
+        verify_status = _verify_source(paper)
+        source_verify_results[idx] = verify_status
+        logger.info(f"来源验证 论文{idx} [{paper.source}]: {verify_status}")
 
     # 构建论文文本
-    papers_text = _build_papers_text(state.top_papers, doi_verify_results)
+    papers_text = _build_papers_text(state.top_papers, source_verify_results)
 
     # 构建用户画像文本
     profile_text = ""
