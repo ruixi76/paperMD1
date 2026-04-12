@@ -1,15 +1,16 @@
 """
 PubMed文献抓取节点
 
-通过PubMed E-utilities API获取医学文献
+通过PubMed E-utilities API获取医学文献，全文搜索GitHub代码链接
 """
 import json
 import logging
+import re
 import time
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
-from typing import List
+from typing import List, Optional
 from langchain_core.runnables import RunnableConfig
 from langgraph.runtime import Runtime
 from coze_coding_utils.runtime_ctx.context import Context
@@ -20,6 +21,26 @@ logger = logging.getLogger(__name__)
 
 ESEARCH_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
 EFETCH_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
+
+GITHUB_PATTERN = re.compile(r'(https?://github\.com/[\w\-]+/[\w\-\.]+)')
+
+
+def _search_github_in_text(text: str) -> str:
+    """从文本中搜索GitHub链接，返回第一个匹配"""
+    if not text:
+        return ""
+    match = GITHUB_PATTERN.search(text)
+    return match.group(1) if match else ""
+
+
+def _fetch_page_text(url: str, timeout: int = 10) -> str:
+    """抓取网页全文内容（用于搜索GitHub链接）"""
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "LiteratureRadar/1.0"})
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            return response.read().decode("utf-8", errors="ignore")
+    except Exception:
+        return ""
 
 
 def _build_pubmed_query(user_profile: UserProfile) -> str:
@@ -33,7 +54,6 @@ def _build_pubmed_query(user_profile: UserProfile) -> str:
         if kw_stripped:
             search_terms.append(f'"{kw_stripped}"[Title/Abstract]')
 
-    # 如果有研究方向，补充医学相关方向词
     for direction in directions:
         d_stripped = direction.strip()
         if d_stripped and "医学" in d_stripped or "medical" in d_stripped.lower():
@@ -44,6 +64,31 @@ def _build_pubmed_query(user_profile: UserProfile) -> str:
         search_terms = ['"artificial intelligence"[MeSH Terms]']
 
     return " OR ".join(search_terms)
+
+
+def _enrich_code_url(paper: PaperInfo) -> PaperInfo:
+    """
+    全文搜索GitHub代码链接
+    优先级：已有code_url > 摘要搜索 > PubMed文章页面全文搜索
+    """
+    # 1. 已有则直接返回
+    if paper.code_url:
+        return paper
+
+    # 2. 摘要搜索
+    code_url = _search_github_in_text(paper.abstract)
+    if code_url:
+        return PaperInfo(**{**paper.model_dump(), "code_url": code_url})
+
+    # 3. PubMed文章页面全文搜索
+    if paper.url:
+        page_text = _fetch_page_text(paper.url, timeout=8)
+        code_url = _search_github_in_text(page_text)
+        if code_url:
+            logger.info(f"PubMed全文搜索到GitHub: {paper.title[:40]}... → {code_url}")
+            return PaperInfo(**{**paper.model_dump(), "code_url": code_url})
+
+    return paper
 
 
 def _parse_pubmed_article(article) -> PaperInfo:
@@ -89,14 +134,14 @@ def _parse_pubmed_article(article) -> PaperInfo:
         year = pub_date_elem.find("Year")
         month = pub_date_elem.find("Month")
         day = pub_date_elem.find("Day")
-        parts = []
+        date_parts = []
         if year is not None and year.text:
-            parts.append(year.text.strip())
+            date_parts.append(year.text.strip())
         if month is not None and month.text:
-            parts.append(month.text.strip())
+            date_parts.append(month.text.strip())
         if day is not None and day.text:
-            parts.append(day.text.strip())
-        publish_date = "-".join(parts)
+            date_parts.append(day.text.strip())
+        publish_date = "-".join(date_parts)
 
     pmid_elem = article.find(".//PMID")
     pmid = pmid_elem.text.strip() if pmid_elem is not None and pmid_elem.text else ""
@@ -104,12 +149,7 @@ def _parse_pubmed_article(article) -> PaperInfo:
         url = f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/"
 
     # 从摘要中提取GitHub代码链接
-    code_url = ""
-    if abstract:
-        import re
-        github_match = re.search(r'(https?://github\.com/[\w\-]+/[\w\-]+)', abstract)
-        if github_match:
-            code_url = github_match.group(1)
+    code_url = _search_github_in_text(abstract)
 
     return PaperInfo(
         title=title,
@@ -131,7 +171,7 @@ def fetch_pubmed_node(
 ) -> FetchPubmedOutput:
     """
     title: PubMed文献抓取
-    desc: 通过PubMed E-utilities API获取医学领域最新文献
+    desc: 通过PubMed E-utilities API获取医学领域最新文献，全文搜索GitHub代码链接
     integrations: PubMed API
     """
     ctx = runtime.context
@@ -183,8 +223,17 @@ def fetch_pubmed_node(
                 logger.warning(f"解析PubMed文章失败: {e}")
                 continue
 
-        logger.info(f"PubMed抓取成功: {len(papers)} 篇文献")
-        return FetchPubmedOutput(pubmed_papers=papers)
+        # 全文搜索GitHub链接（对无code_url的论文补充搜索）
+        enriched_papers = []
+        for paper in papers:
+            if paper.code_url:
+                enriched_papers.append(paper)
+            else:
+                enriched_papers.append(_enrich_code_url(paper))
+
+        code_count = sum(1 for p in enriched_papers if p.code_url)
+        logger.info(f"PubMed抓取成功: {len(enriched_papers)} 篇文献, {code_count} 篇含代码链接")
+        return FetchPubmedOutput(pubmed_papers=enriched_papers)
 
     except Exception as e:
         logger.error(f"PubMed抓取失败: {e}")

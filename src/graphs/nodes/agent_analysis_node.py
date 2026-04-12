@@ -76,6 +76,9 @@ def _build_papers_text(papers: List[PaperInfo], source_verify_results: Dict[int,
         text += f"论文链接: {paper.url}\n"
         if paper.code_url:
             text += f"代码仓库: {paper.code_url}\n"
+            text += f"代码可用性: ✅ 有公开代码\n"
+        else:
+            text += f"代码可用性: ❌ 无公开代码\n"
         text += f"来源: {paper.source} | 日期: {paper.publish_date}\n\n"
     return text
 

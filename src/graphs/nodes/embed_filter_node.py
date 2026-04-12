@@ -15,7 +15,7 @@ from graphs.state import EmbedFilterInput, EmbedFilterOutput, PaperInfo, UserPro
 
 logger = logging.getLogger(__name__)
 
-TOP_K = 10  # 保留Top 10论文
+TOP_K = 15  # 保留Top 15论文，确保固定配额2+3+5=10篇有足够候选
 
 
 def _cosine_similarity(vec_a: List[float], vec_b: List[float]) -> float:

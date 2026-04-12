@@ -2,7 +2,7 @@
 
 ## 项目概述
 - **名称**: 文献雷达 (Literature Radar)
-- **功能**: 多源采集科研文献 → 向量相似度过滤 → 三维评分+DOI溯源 → 个性化简报 → 邮件推送
+- **功能**: 多源采集科研文献 → 全文搜索GitHub代码 → 向量相似度过滤 → 三维评分+DOI溯源+代码可用性 → 固定配额(2高+3推荐+5关注) → 个性化简报 → 邮件推送
 
 ## 工作流结构 (DAG)
 ```
@@ -15,12 +15,12 @@ START ─────────────────┼─ fetch_pubmed ─
 ### 节点清单
 | 节点名 | 文件位置 | 类型 | 功能描述 | 配置文件 |
 |-------|---------|------|---------|---------|
-| fetch_arxiv | `nodes/fetch_arxiv_node.py` | task | ArXiv API抓取最新论文 | - |
-| fetch_pubmed | `nodes/fetch_pubmed_node.py` | task | PubMed E-utilities抓取医学文献 | - |
-| fetch_scholar | `nodes/fetch_scholar_node.py` | task | Semantic Scholar API抓取工程文献 | - |
+| fetch_arxiv | `nodes/fetch_arxiv_node.py` | task | ArXiv API抓取+全文搜索GitHub链接 | - |
+| fetch_pubmed | `nodes/fetch_pubmed_node.py` | task | PubMed E-utilities抓取+全文搜索GitHub链接 | - |
+| fetch_scholar | `nodes/fetch_scholar_node.py` | task | Semantic Scholar API抓取+全文搜索GitHub链接 | - |
 | merge_papers | `nodes/merge_papers_node.py` | task | 合并三源论文+标题相似度去重 | - |
-| embed_filter | `nodes/embed_filter_node.py` | task | Embedding向量相似度过滤Top10 | - |
-| agent_analysis | `nodes/agent_analysis_node.py` | agent | 三维评分+DOI溯源+Self-Check | `config/agent_analysis_llm_cfg.json` |
+| embed_filter | `nodes/embed_filter_node.py` | task | Embedding向量相似度过滤Top15 | - |
+| agent_analysis | `nodes/agent_analysis_node.py` | agent | 三维评分+DOI溯源+代码可用性+固定配额(2+3+5) | `config/agent_analysis_llm_cfg.json` |
 | generate_briefing | `nodes/generate_briefing_node.py` | agent | 个性化HTML简报生成 | `config/generate_briefing_llm_cfg.json` |
 | send_email | `nodes/send_email_node.py` | task | HTML格式邮件推送 | - |
 
@@ -35,8 +35,19 @@ START ─────────────────┼─ fetch_pubmed ─
 | 相关性 | Relevance | 1-10 | 与用户研究方向契合度 |
 | 可行性 | Feasibility | 1-10 | 代码/数据可复现性 |
 
+### 优先级分类（固定配额）
+| 优先级 | 数量 | 条件 |
+|-------|------|------|
+| 🔴 HIGH | 2篇 | 总分≥24且相关性≥8，有代码优先 |
+| 🟡 RECOMMENDED | 3篇 | 总分18-23或相关性≥7，有代码优先 |
+| 🟢 WATCH | 5篇 | 总分<18但有创新亮点 |
+
+### GitHub代码链接搜索
+- 每篇论文搜索优先级：已有code_url → 摘要正则 → ArXiv HTML全文/ PubMed文章页/ Scholar论文页
+- 有无代码纳入优先级评估（有代码的论文优先级上调一档）
+
 ### 防幻觉机制
-1. **DOI溯源校验**: 通过doi.org解析验证文献真实性
+1. **来源溯源校验**: 格式校验+来源URL验证（DOI格式/ArXiv/PubMed/Scholar来源）
 2. **Self-Check**: LLM自检评分是否与原文摘要一致
 3. **禁止编造**: SP中明确约束仅基于摘要评分
 

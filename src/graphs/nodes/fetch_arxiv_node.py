@@ -1,16 +1,16 @@
 """
 ArXiv论文抓取节点
 
-通过ArXiv API获取最新论文
+通过ArXiv API获取最新论文，全文搜索GitHub代码链接
 """
 import json
 import logging
-import math
+import re
 import time
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
-from typing import List
+from typing import List, Optional
 from langchain_core.runnables import RunnableConfig
 from langgraph.runtime import Runtime
 from coze_coding_utils.runtime_ctx.context import Context
@@ -23,17 +23,62 @@ ARXIV_API_BASE = "http://export.arxiv.org/api/query"
 
 ATOM_NS = {"atom": "http://www.w3.org/2005/Atom", "arxiv": "http://arxiv.org/schemas/atom"}
 
+GITHUB_PATTERN = re.compile(r'(https?://github\.com/[\w\-]+/[\w\-\.]+)')
+
+
+def _search_github_in_text(text: str) -> str:
+    """从文本中搜索GitHub链接，返回第一个匹配"""
+    if not text:
+        return ""
+    match = GITHUB_PATTERN.search(text)
+    return match.group(1) if match else ""
+
+
+def _fetch_page_text(url: str, timeout: int = 10) -> str:
+    """抓取网页全文内容（用于搜索GitHub链接）"""
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "LiteratureRadar/1.0"})
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            return response.read().decode("utf-8", errors="ignore")
+    except Exception:
+        return ""
+
 
 def _build_arxiv_query(user_profile: UserProfile) -> str:
     """根据用户画像构建ArXiv搜索查询"""
     keywords = user_profile.keywords
     if not keywords:
         keywords = ["artificial intelligence", "deep learning"]
-    # 构建查询: all:keyword1 OR all:keyword2
     query_parts = [f'all:{kw.strip()}' for kw in keywords if kw.strip()]
     if not query_parts:
         query_parts = ["all:artificial intelligence"]
     return " OR ".join(query_parts)
+
+
+def _enrich_code_url(paper: PaperInfo) -> PaperInfo:
+    """
+    全文搜索GitHub代码链接
+    优先级：已有code_url > 摘要搜索 > 论文HTML页面全文搜索 > ArXiv comment字段
+    """
+    # 1. 已有则直接返回
+    if paper.code_url:
+        return paper
+
+    # 2. 摘要搜索
+    code_url = _search_github_in_text(paper.abstract)
+    if code_url:
+        return PaperInfo(**{**paper.model_dump(), "code_url": code_url})
+
+    # 3. ArXiv HTML页面全文搜索
+    if paper.url and "arxiv.org" in paper.url:
+        html_url = paper.url.replace("/abs/", "/html/")
+        page_text = _fetch_page_text(html_url, timeout=8)
+        code_url = _search_github_in_text(page_text)
+        if code_url:
+            logger.info(f"ArXiv全文搜索到GitHub: {paper.title[:40]}... → {code_url}")
+            return PaperInfo(**{**paper.model_dump(), "code_url": code_url})
+
+    return paper
 
 
 def _parse_arxiv_entry(entry) -> PaperInfo:
@@ -53,6 +98,10 @@ def _parse_arxiv_entry(entry) -> PaperInfo:
     doi_elem = entry.find("arxiv:doi", ATOM_NS)
     doi = doi_elem.text.strip() if doi_elem is not None and doi_elem.text else ""
 
+    # 尝试从arxiv:comment提取GitHub链接
+    comment_elem = entry.find("arxiv:comment", ATOM_NS)
+    comment_text = comment_elem.text if comment_elem is not None and comment_elem.text else ""
+
     url = ""
     code_url = ""
     for link_elem in entry.findall("atom:link", ATOM_NS):
@@ -66,12 +115,13 @@ def _parse_arxiv_entry(entry) -> PaperInfo:
         id_elem = entry.find("atom:id", ATOM_NS)
         url = id_elem.text.strip() if id_elem is not None and id_elem.text else ""
 
-    # 尝试从摘要中提取GitHub链接
-    if not code_url and abstract:
-        import re
-        github_match = re.search(r'(https?://github\.com/[\w\-]+/[\w\-]+)', abstract)
-        if github_match:
-            code_url = github_match.group(1)
+    # comment字段搜索
+    if not code_url:
+        code_url = _search_github_in_text(comment_text)
+
+    # 摘要搜索
+    if not code_url:
+        code_url = _search_github_in_text(abstract)
 
     published_elem = entry.find("atom:published", ATOM_NS)
     publish_date = published_elem.text.strip()[:10] if published_elem is not None and published_elem.text else ""
@@ -102,7 +152,7 @@ def fetch_arxiv_node(
 ) -> FetchArxivOutput:
     """
     title: ArXiv论文抓取
-    desc: 通过ArXiv API获取最新论文，支持关键词搜索和日期排序
+    desc: 通过ArXiv API获取最新论文，全文搜索GitHub代码链接
     integrations: ArXiv API
     """
     ctx = runtime.context
@@ -135,8 +185,17 @@ def fetch_arxiv_node(
                 logger.warning(f"解析ArXiv条目失败: {e}")
                 continue
 
-        logger.info(f"ArXiv抓取成功: {len(papers)} 篇论文")
-        return FetchArxivOutput(arxiv_papers=papers)
+        # 全文搜索GitHub链接（对无code_url的论文补充搜索）
+        enriched_papers = []
+        for paper in papers:
+            if paper.code_url:
+                enriched_papers.append(paper)
+            else:
+                enriched_papers.append(_enrich_code_url(paper))
+
+        code_count = sum(1 for p in enriched_papers if p.code_url)
+        logger.info(f"ArXiv抓取成功: {len(enriched_papers)} 篇论文, {code_count} 篇含代码链接")
+        return FetchArxivOutput(arxiv_papers=enriched_papers)
 
     except Exception as e:
         logger.error(f"ArXiv抓取失败: {e}")

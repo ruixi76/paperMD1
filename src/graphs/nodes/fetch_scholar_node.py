@@ -1,14 +1,15 @@
 """
 Semantic Scholar论文抓取节点
 
-通过Semantic Scholar API获取太赫兹/电子工程领域文献
+通过Semantic Scholar API获取太赫兹/电子工程领域文献，全文搜索GitHub代码链接
 """
 import json
 import logging
+import re
 import time
 import urllib.parse
 import urllib.request
-from typing import List
+from typing import List, Optional
 from langchain_core.runnables import RunnableConfig
 from langgraph.runtime import Runtime
 from coze_coding_utils.runtime_ctx.context import Context
@@ -19,6 +20,26 @@ logger = logging.getLogger(__name__)
 
 SCHOLAR_API_BASE = "https://api.semanticscholar.org/graph/v1/paper/search"
 
+GITHUB_PATTERN = re.compile(r'(https?://github\.com/[\w\-]+/[\w\-\.]+)')
+
+
+def _search_github_in_text(text: str) -> str:
+    """从文本中搜索GitHub链接，返回第一个匹配"""
+    if not text:
+        return ""
+    match = GITHUB_PATTERN.search(text)
+    return match.group(1) if match else ""
+
+
+def _fetch_page_text(url: str, timeout: int = 10) -> str:
+    """抓取网页全文内容（用于搜索GitHub链接）"""
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "LiteratureRadar/1.0"})
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            return response.read().decode("utf-8", errors="ignore")
+    except Exception:
+        return ""
+
 
 def _build_scholar_query(user_profile: UserProfile) -> str:
     """根据用户画像构建Semantic Scholar搜索查询"""
@@ -27,7 +48,6 @@ def _build_scholar_query(user_profile: UserProfile) -> str:
 
     search_terms = [kw.strip() for kw in keywords if kw.strip()]
 
-    # 补充研究方向相关关键词
     for direction in directions:
         d = direction.strip().lower()
         if "太赫兹" in d or "terahertz" in d:
@@ -41,6 +61,31 @@ def _build_scholar_query(user_profile: UserProfile) -> str:
         search_terms = ["artificial intelligence", "deep learning"]
 
     return " ".join(search_terms[:5])
+
+
+def _enrich_code_url(paper: PaperInfo) -> PaperInfo:
+    """
+    全文搜索GitHub代码链接
+    优先级：已有code_url > 摘要搜索 > Semantic Scholar论文页面全文搜索
+    """
+    # 1. 已有则直接返回
+    if paper.code_url:
+        return paper
+
+    # 2. 摘要搜索
+    code_url = _search_github_in_text(paper.abstract)
+    if code_url:
+        return PaperInfo(**{**paper.model_dump(), "code_url": code_url})
+
+    # 3. Semantic Scholar论文页面全文搜索
+    if paper.url:
+        page_text = _fetch_page_text(paper.url, timeout=8)
+        code_url = _search_github_in_text(page_text)
+        if code_url:
+            logger.info(f"Scholar全文搜索到GitHub: {paper.title[:40]}... → {code_url}")
+            return PaperInfo(**{**paper.model_dump(), "code_url": code_url})
+
+    return paper
 
 
 def _parse_scholar_paper(paper_data: dict) -> PaperInfo:
@@ -70,12 +115,7 @@ def _parse_scholar_paper(paper_data: dict) -> PaperInfo:
         publish_date = ""
 
     # 从摘要中提取GitHub代码链接
-    code_url = ""
-    if abstract:
-        import re
-        github_match = re.search(r'(https?://github\.com/[\w\-]+/[\w\-]+)', abstract)
-        if github_match:
-            code_url = github_match.group(1)
+    code_url = _search_github_in_text(abstract)
 
     return PaperInfo(
         title=title,
@@ -97,7 +137,7 @@ def fetch_scholar_node(
 ) -> FetchScholarOutput:
     """
     title: Semantic Scholar文献抓取
-    desc: 通过Semantic Scholar API获取工程与物理领域最新文献
+    desc: 通过Semantic Scholar API获取工程与物理领域最新文献，全文搜索GitHub代码链接
     integrations: Semantic Scholar API
     """
     ctx = runtime.context
@@ -127,8 +167,17 @@ def fetch_scholar_node(
                 logger.warning(f"解析Semantic Scholar论文失败: {e}")
                 continue
 
-        logger.info(f"Semantic Scholar抓取成功: {len(papers)} 篇论文")
-        return FetchScholarOutput(scholar_papers=papers)
+        # 全文搜索GitHub链接（对无code_url的论文补充搜索）
+        enriched_papers = []
+        for paper in papers:
+            if paper.code_url:
+                enriched_papers.append(paper)
+            else:
+                enriched_papers.append(_enrich_code_url(paper))
+
+        code_count = sum(1 for p in enriched_papers if p.code_url)
+        logger.info(f"Semantic Scholar抓取成功: {len(enriched_papers)} 篇论文, {code_count} 篇含代码链接")
+        return FetchScholarOutput(scholar_papers=enriched_papers)
 
     except Exception as e:
         logger.error(f"Semantic Scholar抓取失败: {e}")
