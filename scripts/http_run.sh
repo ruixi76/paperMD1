@@ -8,7 +8,7 @@ PORT=8000
 
 # ========== 项目环境变量配置 ==========
 # HTTP Trigger 认证密钥（用于 /trigger/literature-radar 端点的 Bearer Token 认证）
-export TRIGGER_API_KEY="my-secret-key-2024"
+export TRIGGER_API_KEY="pat_OaCeTBcACFZIxfjIDIokMn1TvVqFoerrUA64Ena8PJVpVBEwmeA6ehDtYCOHIRJQ"
 # ========================================
 
 usage() {
