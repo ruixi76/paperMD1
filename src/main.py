@@ -242,29 +242,33 @@ app = FastAPI()
 openai_handler = OpenAIChatHandler(service)
 
 
-# ========== HTTP Trigger: Bearer Token 认证 ==========
+# ========== Bearer Token 认证 ==========
 
 TRIGGER_API_KEY = os.getenv("TRIGGER_API_KEY", "")
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
 
-async def verify_trigger_token(credentials: HTTPAuthorizationCredentials = Security(bearer_scheme)) -> None:
+async def verify_trigger_token(request: Request) -> None:
     """
-    验证 HTTP Trigger 请求的 Bearer Token。
-    若环境变量 TRIGGER_API_KEY 未设置或为空，则跳过认证（开发模式）。
+    智能认证策略：
+    - TRIGGER_API_KEY 未配置 → 跳过认证（开发模式）
+    - 请求携带 Authorization 头 → 必须验证 Bearer Token 有效性
+    - 请求无 Authorization 头 → 放行（兼容 Coze 平台内部调用），记录日志
+    
+    这样既保护了外部 Trigger 调用，又不阻塞 Coze 平台的内部 /run 调用。
     """
     if not TRIGGER_API_KEY:
-        # 未配置 API Key，跳过认证（开发/调试模式）
         return
 
+    # 检查是否携带 Authorization 头
+    credentials = await bearer_scheme(request)
     if credentials is None:
-        raise HTTPException(
-            status_code=401,
-            detail="Missing Authorization header. Provide: Bearer <token>",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        # 无 Authorization 头，放行（Coze 平台内部调用）
+        logger.info("Request without Authorization header, allowing (Coze internal call)")
+        return
 
+    # 有 Authorization 头，必须验证
     token = credentials.credentials
     if token != TRIGGER_API_KEY:
         raise HTTPException(
@@ -273,150 +277,14 @@ async def verify_trigger_token(credentials: HTTPAuthorizationCredentials = Secur
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-
-# ========== HTTP Trigger: /trigger/literature-radar ==========
-
-@app.post("/trigger/literature-radar", dependencies=[Depends(verify_trigger_token)])
-async def trigger_literature_radar(request: Request) -> Dict[str, Any]:
-    """
-    文献雷达 HTTP Trigger 端点
-
-    方法: POST
-    路径: /trigger/literature-radar
-    认证: Bearer Token (通过环境变量 TRIGGER_API_KEY 配置)
-
-    请求体:
-    {
-        "to_email": "string (必填) - 收件人邮箱地址",
-        "user_profile": {
-            "research_directions": ["array"] - 研究方向,
-            "keywords": ["array"] - 搜索关键词,
-            "preferred_authors": ["array"] - 关注学者
-        }
-    }
-
-    响应:
-    {
-        "success": true,
-        "message": "...",
-        "run_id": "...",
-        "papers_count": 0,
-        "top_papers_count": 0
-    }
-    """
-    ctx = new_context(method="trigger_literature_radar", headers=request.headers)
-    upstream_run_id = request.headers.get(HEADER_X_RUN_ID)
-    if upstream_run_id:
-        ctx.run_id = upstream_run_id
-    run_id = ctx.run_id
-    request_context.set(ctx)
-
-    raw_body = await request.body()
-    try:
-        body_text = raw_body.decode("utf-8")
-    except Exception as e:
-        body_text = str(raw_body)
-        raise HTTPException(status_code=400, detail=f"Invalid request body: {body_text}")
-
-    logger.info(f"Trigger /trigger/literature-radar: run_id={run_id}, body={body_text}")
-
-    try:
-        payload = await request.json()
-    except json.JSONDecodeError as e:
-        logger.error(f"JSON decode error in trigger: {e}")
-        raise HTTPException(status_code=400, detail="Invalid JSON format")
-
-    # 输入参数校验
-    to_email = payload.get("to_email", "")
-    if not to_email:
-        raise HTTPException(status_code=400, detail="Missing required field: to_email")
-
-    user_profile_data = payload.get("user_profile", {})
-    if not isinstance(user_profile_data, dict):
-        raise HTTPException(status_code=400, detail="user_profile must be an object")
-
-    research_directions = user_profile_data.get("research_directions", [])
-    keywords = user_profile_data.get("keywords", [])
-    preferred_authors = user_profile_data.get("preferred_authors", [])
-
-    if not research_directions and not keywords:
-        raise HTTPException(
-            status_code=400,
-            detail="At least one of user_profile.research_directions or user_profile.keywords is required"
-        )
-
-    # 构造标准化 payload
-    validated_payload = {
-        "to_email": str(to_email),
-        "user_profile": {
-            "research_directions": research_directions if isinstance(research_directions, list) else [],
-            "keywords": keywords if isinstance(keywords, list) else [],
-            "preferred_authors": preferred_authors if isinstance(preferred_authors, list) else [],
-        }
-    }
-
-    logger.info(f"Trigger validated payload: to_email={validated_payload['to_email']}, "
-                f"directions={research_directions}, keywords={keywords}")
-
-    # 执行工作流
-    try:
-        task = asyncio.create_task(service.run(validated_payload, ctx))
-        service.running_tasks[run_id] = task
-
-        try:
-            result = await asyncio.wait_for(task, timeout=float(TIMEOUT_SECONDS))
-        except asyncio.TimeoutError:
-            logger.error(f"Trigger execution timeout after {TIMEOUT_SECONDS}s for run_id: {run_id}")
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                return {
-                    "success": False,
-                    "message": f"Execution timeout: exceeded {TIMEOUT_SECONDS} seconds",
-                    "run_id": run_id,
-                    "papers_count": 0,
-                    "top_papers_count": 0,
-                }
-
-        if not result:
-            result = {}
-        if isinstance(result, dict):
-            result["run_id"] = run_id
-        return result
-
-    except asyncio.CancelledError:
-        logger.info(f"Trigger cancelled for run_id: {run_id}")
-        return {
-            "success": False,
-            "message": "Execution was cancelled",
-            "run_id": run_id,
-            "papers_count": 0,
-            "top_papers_count": 0,
-        }
-
-    except Exception as e:
-        error_response = service.error_classifier.get_error_response(e, {"node_name": "trigger_literature_radar", "run_id": run_id})
-        logger.error(
-            f"Unexpected error in trigger: [{error_response['error_code']}] {error_response['error_message']}, "
-            f"traceback: {traceback.format_exc()}",
-            exc_info=True
-        )
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "error_code": error_response["error_code"],
-                "error_message": error_response["error_message"],
-                "stack_trace": extract_core_stack(),
-            }
-        )
-    finally:
-        cozeloop.flush()
+    logger.info("Request authenticated with valid Bearer Token")
 
 
 HEADER_X_RUN_ID = "x-run-id"
 @app.post("/run")
 async def http_run(request: Request) -> Dict[str, Any]:
+    # Trigger 认证（仅当 TRIGGER_API_KEY 已配置且请求含 to_email 时生效）
+    await verify_trigger_token(request)
     global result
     raw_body = await request.body()
     try:

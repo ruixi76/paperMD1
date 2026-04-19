@@ -94,10 +94,10 @@ START ─────────────────┼─ fetch_pubmed ─
 
 ### HTTP Trigger（推荐）
 ```bash
-# POST /trigger/literature-radar
-curl -X POST http://localhost:5000/trigger/literature-radar \
+# POST /run （Coze平台部署域名可用）
+curl -X POST http://9rhxdv55k2.coze.site/run \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <YOUR_API_KEY>" \
+  -H "Authorization: Bearer my-secret-key-2024" \
   -d '{
     "to_email": "user@example.com",
     "user_profile": {
@@ -109,9 +109,11 @@ curl -X POST http://localhost:5000/trigger/literature-radar \
 ```
 
 **认证说明**：
-- 通过环境变量 `TRIGGER_API_KEY` 配置 Bearer Token
-- 未设置 `TRIGGER_API_KEY` 时跳过认证（开发模式）
-- 生产环境务必设置：`export TRIGGER_API_KEY=your-secret-key`
+- `/run` 端点已集成 Bearer Token 认证（智能策略）
+- 通过环境变量 `TRIGGER_API_KEY` 配置密钥（在 `scripts/http_run.sh` 中设置）
+- **无 Authorization 头** → 放行（兼容 Coze 平台内部调用）
+- **有 Authorization 头** → 必须验证 Bearer Token 有效性
+- 未设置 `TRIGGER_API_KEY` 时跳过所有认证（开发模式）
 
 **请求参数**：
 | 字段 | 类型 | 必填 | 说明 |
