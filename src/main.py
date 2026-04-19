@@ -244,7 +244,7 @@ openai_handler = OpenAIChatHandler(service)
 
 # ========== Bearer Token 认证 ==========
 
-TRIGGER_API_KEY = os.getenv("TRIGGER_API_KEY", "")
+TRIGGER_API_KEY = os.getenv("TRIGGER_API_KEY", "") or os.getenv("COZE_SECRET_TOKEN", "")
 
 bearer_scheme = HTTPBearer(auto_error=False)
 

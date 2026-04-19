@@ -7,8 +7,11 @@ WORK_DIR="${COZE_WORKSPACE_PATH:-.}"
 PORT=8000
 
 # ========== 项目环境变量配置 ==========
-# HTTP Trigger 认证密钥（用于 /trigger/literature-radar 端点的 Bearer Token 认证）
-export TRIGGER_API_KEY="pat_OaCeTBcACFZIxfjIDIokMn1TvVqFoerrUA64Ena8PJVpVBEwmeA6ehDtYCOHIRJQ"
+# HTTP Trigger 认证密钥：引用 Coze 平台配置的 Secret Token 环境变量
+# 请在 Coze 平台「项目设置 → 环境变量」中添加：
+#   Key: COZE_SECRET_TOKEN
+#   Value: 你的个人访问令牌 (pat_...)
+export TRIGGER_API_KEY="${COZE_SECRET_TOKEN:-}"
 # ========================================
 
 usage() {
