@@ -6,6 +6,11 @@ set -e
 WORK_DIR="${COZE_WORKSPACE_PATH:-.}"
 PORT=8000
 
+# ========== 项目环境变量配置 ==========
+# HTTP Trigger 认证密钥（用于 /trigger/literature-radar 端点的 Bearer Token 认证）
+export TRIGGER_API_KEY="my-secret-key-2024"
+# ========================================
+
 usage() {
   echo "用法: $0 -p <端口>"
 }
