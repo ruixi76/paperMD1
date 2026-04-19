@@ -92,6 +92,37 @@ START ─────────────────┼─ fetch_pubmed ─
 
 ## 调用方式
 
+### HTTP Trigger（推荐）
+```bash
+# POST /trigger/literature-radar
+curl -X POST http://localhost:5000/trigger/literature-radar \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <YOUR_API_KEY>" \
+  -d '{
+    "to_email": "user@example.com",
+    "user_profile": {
+      "research_directions": ["域自适应", "太赫兹", "医学图像处理"],
+      "keywords": ["domain adaptation", "terahertz imaging", "medical image segmentation"],
+      "preferred_authors": []
+    }
+  }'
+```
+
+**认证说明**：
+- 通过环境变量 `TRIGGER_API_KEY` 配置 Bearer Token
+- 未设置 `TRIGGER_API_KEY` 时跳过认证（开发模式）
+- 生产环境务必设置：`export TRIGGER_API_KEY=your-secret-key`
+
+**请求参数**：
+| 字段 | 类型 | 必填 | 说明 |
+|-----|------|------|------|
+| to_email | string | ✅ | 收件人邮箱地址 |
+| user_profile.research_directions | array | ✅* | 研究方向列表 |
+| user_profile.keywords | array | ✅* | 搜索关键词列表 |
+| user_profile.preferred_authors | array | - | 关注学者列表 |
+
+> *research_directions 和 keywords 至少需提供一个
+
 ### Python调用
 ```python
 from graphs.graph import main_graph
