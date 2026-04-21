@@ -6,6 +6,9 @@ on:
   issue_comment:
     types: [created]        # 当有人在 Issue 下回复时触发
 
+  # 允许手动触发
+  workflow_dispatch:
+
 jobs:
   update-vector-db:
     # 只有当 Issue 带有 'feedback' 标签时才执行
