@@ -1,0 +1,43 @@
+name: 向量数据库更新 - 论文反馈监听
+
+on:
+  issues:
+    types: [opened, edited] # 当 Issue 被创建或编辑时触发
+  issue_comment:
+    types: [created]        # 当有人在 Issue 下回复时触发
+
+jobs:
+  update-vector-db:
+    # 只有当 Issue 带有 'feedback' 标签时才执行
+    if: contains(github.event.issue.labels.*.name, 'feedback')
+    runs-on: ubuntu-latest
+    steps:
+      - name: 解析反馈内容与触发者
+        id: extract_data
+        run: |
+          # 提取 Issue 提交人、标题和内容主体
+          USER_LOGIN="${{ github.event.issue.user.login }}"
+          ISSUE_TITLE="${{ github.event.issue.title }}"
+          ISSUE_BODY="${{ github.event.issue.body || github.event.comment.body }}"
+          
+          echo "User: $USER_LOGIN"
+          echo "Title: $ISSUE_TITLE"
+          
+          # 因为 body 可能包含换行，我们将其转义处理或存为环境变量
+          echo "ISSUE_BODY<<EOF" >> $GITHUB_ENV
+          echo "$ISSUE_BODY" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+
+      - name: 发送反馈到扣子平台 (Coze API)
+        run: |
+          # 将反馈文本通过 API 发送给扣子的处理流
+          # 注意：你可能需要在扣子建一个专门处理“反馈更新”的工作流，这里假设它的 webhook 和之前的一致，通过 mode 区分
+          curl -s --max-time 60 \
+            "https://9rhxdv55k2.coze.site/run" \
+            -H "Authorization: Bearer ${{ secrets.SECRET_Token }}" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"mode\": \"feedback_update\",
+              \"github_user\": \"${{ github.actor }}\",
+              \"feedback_content\": $(jq -Rsa . <<< "$ISSUE_BODY")
+            }"
