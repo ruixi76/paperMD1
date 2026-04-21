@@ -1,0 +1,50 @@
+# 文献雷达每日推送 - GitHub Actions 工作流
+# 每天北京时间8:00（UTC 0:00）自动触发，也可手动运行
+
+name: 文献雷达每日推送
+
+on:
+  # 定时触发：每天 UTC 0:00（北京时间 8:00）
+  schedule:
+    - cron: '0 0 * * *'
+  
+  # 允许手动触发
+  workflow_dispatch:
+
+jobs:
+  trigger-coze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: 推送 - 张蕊喜（域自适应）
+        run: |
+          curl -s --max-time 30 \
+            "https://9rhxdv55k2.coze.site/run" \
+            -H "Authorization: Bearer ${{ secrets.SECRET_Token }}" \
+            -H "X-Trigger-Token: ${{ secrets.SECRET_Token }}" \
+            -G \
+            --data-urlencode "to_email=1372392238@qq.com" \
+            --data-urlencode 'research_directions=["Domain Adaptation", "Computer Vision"]' \
+            --data-urlencode 'keywords=["unsupervised domain adaptation", "feature alignment", "adversarial training"]'
+        
+      - name: 推送 - 李少辉（太赫兹）
+        run: |
+          curl -s --max-time 30 \
+            "https://9rhxdv55k2.coze.site/run" \
+            -H "Authorization: Bearer ${{ secrets.SECRET_Token }}" \
+            -H "X-Trigger-Token: ${{ secrets.SECRET_Token }}" \
+            -G \
+            --data-urlencode "to_email=1372392238@qq.com" \
+            --data-urlencode 'research_directions=["Terahertz", "Electromagnetic Wave"]' \
+            --data-urlencode 'keywords=["terahertz imaging", "metasurface", "spectroscopy"]'
+      - name: 推送 - 景欣（医学图像）
+        run: |
+          curl -s --max-time 30 \
+            "https://9rhxdv55k2.coze.site/run" \
+            -H "Authorization: Bearer ${{ secrets.SECRET_Token }}" \
+            -H "X-Trigger-Token: ${{ secrets.SECRET_Token }}" \
+            -G \
+            --data-urlencode "to_email=1372392238@qq.com" \
+            --data-urlencode 'research_directions=["Medical Image", "Deep Learning"]' \
+            --data-urlencode 'keywords=["MRI segmentation", "few-shot learning", "attention mechanism"]'
