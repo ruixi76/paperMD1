@@ -4,9 +4,9 @@
 name: 文献雷达每日推送
 
 on:
-  # 定时触发：每天 UTC 0:00（北京时间 8:00）
-  schedule:
-    - cron: '0 0 * * *'
+  # # 定时触发：每天 UTC 0:00（北京时间 8:00）
+  # schedule:
+  #   - cron: '0 0 * * *'
   
   # 允许手动触发
   workflow_dispatch:
